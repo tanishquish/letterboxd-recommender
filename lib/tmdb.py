@@ -3,11 +3,14 @@
 Needs a free TMDB API key: https://www.themoviedb.org/settings/api
 """
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
+from requests.adapters import HTTPAdapter
 
 BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE = "https://image.tmdb.org/t/p/w342"
+MAX_WORKERS = 16
 
 # TMDB's standard movie genre list -- the same set Letterboxd shows on its
 # own /films/genre/ pages, since Letterboxd sources genre metadata from
@@ -42,6 +45,10 @@ class TMDBClient:
     def __init__(self, api_key: str):
         self.api_key = api_key
         self.session = requests.Session()
+        # The requests default pool (10 connections) would bottleneck the
+        # concurrent fetches below; give it enough headroom for MAX_WORKERS.
+        adapter = HTTPAdapter(pool_connections=MAX_WORKERS, pool_maxsize=MAX_WORKERS)
+        self.session.mount("https://", adapter)
         self._details_cache: dict[int, dict] = {}
         self._rec_cache: dict[tuple[str, int], list[dict]] = {}
 
@@ -155,3 +162,36 @@ class TMDBClient:
 
     def poster_url(self, poster_path: str | None) -> str | None:
         return f"{POSTER_BASE}{poster_path}" if poster_path else None
+
+    def prefetch_movie_details(self, movie_ids: list[int], max_workers: int = MAX_WORKERS) -> None:
+        """Warms the details cache for many ids concurrently -- these are
+        independent GET requests, so there's no reason to make them one at
+        a time. Callers keep using movie_details() as normal afterward;
+        this just makes those calls near-instant cache hits."""
+        uncached = list(dict.fromkeys(mid for mid in movie_ids if mid not in self._details_cache))
+        if not uncached:
+            return
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            list(pool.map(self.movie_details, uncached))
+
+    def prefetch_related(
+        self, movie_ids: list[int], kinds: tuple[str, ...] = ("recommendations", "similar"),
+        max_workers: int = MAX_WORKERS,
+    ) -> None:
+        pairs = [
+            (mid, kind)
+            for mid in dict.fromkeys(movie_ids)
+            for kind in kinds
+            if (kind, mid) not in self._rec_cache
+        ]
+        if not pairs:
+            return
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            list(pool.map(lambda pair: self.related(*pair), pairs))
+
+    def prefetch_discover(self, genre_ids: list[int], max_workers: int = 6) -> None:
+        uncached = [g for g in dict.fromkeys(genre_ids) if ("discover", g) not in self._rec_cache]
+        if not uncached:
+            return
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            list(pool.map(self.discover_by_genre, uncached))

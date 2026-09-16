@@ -13,11 +13,12 @@ here need a follow-up TMDB search to resolve one (see resolve_tmdb_ids).
 """
 import re
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from playwright.sync_api import sync_playwright
 
 from .letterboxd import LetterboxdError, LoggedFilm
-from .tmdb import TMDBClient
+from .tmdb import MAX_WORKERS, TMDBClient
 
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -97,7 +98,6 @@ def scrape_diary(username: str, progress=None, max_pages: int = MAX_PAGES) -> li
                         raise LetterboxdError(f"No Letterboxd user found at '{username}'.")
                     break
 
-                page.wait_for_timeout(500)  # let the page settle; also keeps requests unhurried
                 rows = page.evaluate(_EXTRACT_ROWS_JS)
                 if not rows:
                     break
@@ -151,13 +151,25 @@ def scrape_diary(username: str, progress=None, max_pages: int = MAX_PAGES) -> li
 
 def resolve_tmdb_ids(films: list[LoggedFilm], client: TMDBClient, progress=None) -> None:
     """Fills in tmdb_id for scraped films via TMDB search, in place. The
-    diary page doesn't carry a TMDB id the way the RSS feed does."""
-    total = len(films)
-    for i, film in enumerate(films):
-        if film.tmdb_id is not None:
-            continue
-        if progress and i % 25 == 0:
-            progress(f"Matching scraped films to TMDB ({i}/{total})...")
+    diary page doesn't carry a TMDB id the way the RSS feed does. Each
+    search is an independent request, so they run concurrently rather than
+    one at a time -- this is the single biggest chunk of the app's runtime
+    for an active profile (one search per unique logged film)."""
+    to_resolve = [f for f in films if f.tmdb_id is None]
+    if not to_resolve:
+        return
+
+    def _resolve(film: LoggedFilm) -> None:
         match = client.search_movie(film.title, film.year)
         if match:
             film.tmdb_id = match["id"]
+
+    total = len(to_resolve)
+    done = 0
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = [pool.submit(_resolve, f) for f in to_resolve]
+        for future in as_completed(futures):
+            future.result()  # surface any exception instead of swallowing it
+            done += 1
+            if progress and (done % 25 == 0 or done == total):
+                progress(f"Matching scraped films to TMDB ({done}/{total})...")

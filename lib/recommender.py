@@ -220,6 +220,7 @@ def recommend(
     watched_ids = {f.tmdb_id for f in with_ids}
 
     report(f"Fetching details for {len(with_ids)} logged films...")
+    client.prefetch_movie_details([f.tmdb_id for f in with_ids])
     logged_details = [(f, client.movie_details(f.tmdb_id)) for f in with_ids]
     details_by_id = {f.tmdb_id: d for f, d in logged_details}
 
@@ -242,6 +243,7 @@ def recommend(
     seed_titles = {f.tmdb_id: f"you liked {f.title} ({f.year})" for f in seeds}
 
     report(f"Gathering candidates from {len(seeds)} favorite films...")
+    client.prefetch_related([s.tmdb_id for s in seeds])
     candidate_sources: dict[int, dict] = {}
     candidate_seed_score: dict[int, float] = defaultdict(float)
     candidate_because: dict[int, set[str]] = defaultdict(set)
@@ -261,6 +263,7 @@ def recommend(
 
     if preferred_genre_ids:
         report(f"Pulling extra picks for {len(preferred_genre_ids)} chosen genre(s)...")
+        client.prefetch_discover(preferred_genre_ids)
         for gid in preferred_genre_ids:
             genre_label = f"you picked {GENRE_NAMES.get(gid, 'that genre')}"
             for item in client.discover_by_genre(gid):
@@ -271,6 +274,7 @@ def recommend(
                 candidate_because[cid].add(genre_label)
 
     report(f"Scoring {len(candidate_sources)} candidates...")
+    client.prefetch_movie_details(list(candidate_sources.keys()))
     results: list[Recommendation] = []
     for cid, basic in candidate_sources.items():
         details = client.movie_details(cid)

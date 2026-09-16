@@ -61,9 +61,8 @@ python3 app.py
 
 Open http://127.0.0.1:5057, enter a public Letterboxd username (or profile
 URL) and your TMDB key, optionally pick up to 3 genres to focus on, and get
-recommendations. A full scrape of an active diary can take 30-90 seconds
-(paging through the diary, then matching every film to TMDB) — this is
-normal, not a hang.
+recommendations. TMDB lookups run concurrently, so even an active diary
+(hundreds of films) typically finishes in well under 15 seconds.
 
 ## Notes / limitations
 

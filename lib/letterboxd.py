@@ -9,6 +9,7 @@ rather than a user's entire history.
 """
 import re
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from dataclasses import dataclass
 
 import requests
@@ -34,9 +35,10 @@ class LoggedFilm:
     year: int | None
     tmdb_id: int | None
     rating: float | None  # 0.5-5.0 stars, None if logged without a rating
-    liked: bool
-    rewatch: bool
-    watched_date: str | None
+    liked: bool  # true if liked on ANY of its log entries
+    times_logged: int  # diary entries for this film in the fetched window (rewatches included)
+    times_reviewed: int  # of those, how many carried a written review
+    watched_date: str | None  # most recent
 
 
 def fetch_diary(username: str) -> list[LoggedFilm]:
@@ -66,10 +68,14 @@ def fetch_diary(username: str) -> list[LoggedFilm]:
             f"'{username}' has no public activity, or the profile is private."
         )
 
-    films: list[LoggedFilm] = []
+    # Each diary/watch entry is its own RSS item, so a rewatch or a film
+    # reviewed more than once shows up as multiple items for the same film.
+    # The feed lists newest first, so entries are grouped in that order and
+    # the group's rating/tmdb id/watched date come from the most recent one.
+    entries_by_key: dict[tuple[str, int | None], list[dict]] = defaultdict(list)
     for item in items:
-        # Only "watched a film" entries carry a filmTitle; list/review-only
-        # activity entries don't and should be skipped.
+        # Only "watched a film" entries carry a filmTitle; list activity
+        # entries don't and should be skipped.
         title_el = item.find("letterboxd:filmTitle", NS)
         if title_el is None or not title_el.text:
             continue
@@ -78,32 +84,44 @@ def fetch_diary(username: str) -> list[LoggedFilm]:
         tmdb_el = item.find("tmdb:movieId", NS)
         rating_el = item.find("letterboxd:memberRating", NS)
         liked_el = item.find("letterboxd:memberLike", NS)
-        rewatch_el = item.find("letterboxd:rewatch", NS)
         watched_el = item.find("letterboxd:watchedDate", NS)
+        guid_el = item.find("guid")
 
-        films.append(
-            LoggedFilm(
-                title=title_el.text,
-                year=int(year_el.text) if year_el is not None and year_el.text else None,
-                tmdb_id=int(tmdb_el.text) if tmdb_el is not None and tmdb_el.text else None,
-                rating=float(rating_el.text) if rating_el is not None and rating_el.text else None,
-                liked=(liked_el is not None and liked_el.text == "Yes"),
-                rewatch=(rewatch_el is not None and rewatch_el.text == "Yes"),
-                watched_date=watched_el.text if watched_el is not None else None,
-            )
+        year = int(year_el.text) if year_el is not None and year_el.text else None
+        # letterboxd-review-<id> guids carry a written review; letterboxd-watch-<id>
+        # guids are a plain log with no review text.
+        is_review = bool(guid_el is not None and guid_el.text and "letterboxd-review-" in guid_el.text)
+
+        key = (title_el.text.lower(), year)
+        entries_by_key[key].append(
+            {
+                "title": title_el.text,
+                "year": year,
+                "tmdb_id": int(tmdb_el.text) if tmdb_el is not None and tmdb_el.text else None,
+                "rating": float(rating_el.text) if rating_el is not None and rating_el.text else None,
+                "liked": (liked_el is not None and liked_el.text == "Yes"),
+                "is_review": is_review,
+                "watched_date": watched_el.text if watched_el is not None else None,
+            }
         )
 
-    # Collapse rewatches / duplicate log entries for the same film, keeping
-    # the most informative (rated > liked > first-seen) entry.
-    by_key: dict[tuple[str, int | None], LoggedFilm] = {}
-    for f in films:
-        key = (f.title.lower(), f.year)
-        existing = by_key.get(key)
-        if existing is None:
-            by_key[key] = f
-        elif existing.rating is None and f.rating is not None:
-            by_key[key] = f
-    return list(by_key.values())
+    films: list[LoggedFilm] = []
+    for entries in entries_by_key.values():
+        rating = next((e["rating"] for e in entries if e["rating"] is not None), None)
+        tmdb_id = next((e["tmdb_id"] for e in entries if e["tmdb_id"] is not None), None)
+        films.append(
+            LoggedFilm(
+                title=entries[0]["title"],
+                year=entries[0]["year"],
+                tmdb_id=tmdb_id,
+                rating=rating,
+                liked=any(e["liked"] for e in entries),
+                times_logged=len(entries),
+                times_reviewed=sum(1 for e in entries if e["is_review"]),
+                watched_date=entries[0]["watched_date"],
+            )
+        )
+    return films
 
 
 def extract_username(profile_input: str) -> str:

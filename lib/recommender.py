@@ -1,17 +1,24 @@
-"""Builds a taste profile from a user's rated films and scores candidates.
+"""Builds a taste profile from everything a user has logged and scores candidates.
 
 Approach:
-1. Every rated film contributes a signed weight (rating - 2.5) to a profile
-   of genres / keywords / people (director + top cast). Films rated above
-   ~3 stars pull the profile toward their traits; films rated low push away.
+1. Every logged film contributes a weight to a profile of genres / keywords
+   / people (director + top cast) -- not just rated films. The weight blends
+   several signals: star rating (if any), a flat bonus for the like feature
+   (independent of rating -- a liked-but-unrated film still counts), and
+   bonuses for being logged and/or reviewed more than once, since a rewatch
+   or a fresh review on a rewatch is a stronger signal than a single viewing.
 2. Candidates come from TMDB's own "recommendations" and "similar" endpoints,
-   seeded from the user's favorite films (rating >= 4), since that's a much
-   richer signal than genre-matching alone (it captures tone, era, style).
+   seeded from the user's highest-weighted films, since that's a much richer
+   signal than genre-matching alone (it captures tone, era, style). If the
+   user picked genres to focus on, TMDB's "discover" endpoint also pulls in
+   well-regarded films from those genres directly, since a genre absent from
+   someone's own ratings would never surface via seed-based recommendations.
 3. Each candidate is scored by blending TMDB's own ranking (it returned the
    candidate near the top of a favorite film's list) with how well the
    candidate's genres/keywords/people match the user's overall profile, then
    lightly floored by TMDB's average rating so obscure poorly-rated titles
-   don't dominate just because they matched a keyword.
+   don't dominate just because they matched a keyword. If genres were picked,
+   the final list is filtered down to only films in those genres.
 """
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -19,8 +26,7 @@ from dataclasses import dataclass, field
 from .letterboxd import LoggedFilm
 from .tmdb import GENRES, TMDBClient
 
-FAVORITE_THRESHOLD = 4.0
-LOW_RATING_THRESHOLD = 2.0
+FAVORITE_WEIGHT_THRESHOLD = 1.5  # roughly equivalent to a plain 4-star rating
 MAX_SEEDS = 20
 MAX_SEEDS_PER_GENRE = 6
 MAX_RESULTS_PER_GENRE = 5
@@ -28,6 +34,11 @@ CANDIDATES_PER_SEED = 12
 MAX_PREFERRED_GENRES = 3
 GENRE_PREFERENCE_BOOST = 10.0
 GENRE_NAMES = dict(GENRES)
+
+LIKE_BONUS = 0.75
+REWATCH_BONUS_PER_EXTRA = 0.5
+REREVIEW_BONUS_PER_EXTRA = 0.3
+MAX_BONUS_OCCURRENCES = 3  # cap how many extra logs/reviews keep adding weight
 
 
 @dataclass
@@ -54,7 +65,23 @@ class Recommendation:
     genre_ids: list[int]
 
 
-def build_profile(rated_details: list[tuple[LoggedFilm, dict]]) -> Profile:
+def film_weight(logged: LoggedFilm) -> float:
+    """How strongly a logged film should pull the taste profile toward its
+    traits. Rating contributes the bulk of it, but the like feature, rewatches,
+    and re-reviews all add weight on their own, regardless of rating -- a
+    liked-but-unrated film, or one rewatched three times, is a real signal
+    even without stars attached."""
+    weight = (logged.rating - 2.5) if logged.rating is not None else 0.0
+    if logged.liked:
+        weight += LIKE_BONUS
+    if logged.times_logged > 1:
+        weight += min(logged.times_logged - 1, MAX_BONUS_OCCURRENCES) * REWATCH_BONUS_PER_EXTRA
+    if logged.times_reviewed > 1:
+        weight += min(logged.times_reviewed - 1, MAX_BONUS_OCCURRENCES) * REREVIEW_BONUS_PER_EXTRA
+    return weight
+
+
+def build_profile(logged_details: list[tuple[LoggedFilm, dict]]) -> Profile:
     """Averages each trait's weight across the films that carry it, rather
     than summing. A genre you've merely watched a lot of (in volume) would
     otherwise outscore a genre you've rated consistently higher but seen in
@@ -67,12 +94,10 @@ def build_profile(rated_details: list[tuple[LoggedFilm, dict]]) -> Profile:
     person_sum: dict[int, float] = defaultdict(float)
     person_count: dict[int, int] = defaultdict(int)
 
-    for logged, details in rated_details:
-        if not details or logged.rating is None:
+    for logged, details in logged_details:
+        if not details:
             continue
-        weight = logged.rating - 2.5
-        if logged.liked:
-            weight += 0.5
+        weight = film_weight(logged)
 
         for gid in details["genres"]:
             genre_sum[gid] += weight
@@ -102,10 +127,9 @@ def _select_diverse_seeds(
     max_per_genre: int,
 ) -> list[LoggedFilm]:
     """Picks favorite films to seed candidate generation, capping how many
-    seeds can share a genre so a handful of tied-rating titles in one genre
+    seeds can share a genre so a handful of tied-weight titles in one genre
     (e.g. several 5-star animated films) can't crowd out other favorites
-    (e.g. 4.5-star titles) that never get picked because the cap fills up
-    on rating alone."""
+    that never get picked because the cap fills up on weight alone."""
     seeds: list[LoggedFilm] = []
     overflow: list[LoggedFilm] = []
     genre_counts: dict[int, int] = defaultdict(int)
@@ -195,25 +219,24 @@ def recommend(
     with_ids = [f for f in logged_films if f.tmdb_id]
     watched_ids = {f.tmdb_id for f in with_ids}
 
-    rated = [f for f in with_ids if f.rating is not None]
-    report(f"Fetching details for {len(rated)} rated films...")
-    rated_details = [(f, client.movie_details(f.tmdb_id)) for f in rated]
-    details_by_id = {f.tmdb_id: d for f, d in rated_details}
+    report(f"Fetching details for {len(with_ids)} logged films...")
+    logged_details = [(f, client.movie_details(f.tmdb_id)) for f in with_ids]
+    details_by_id = {f.tmdb_id: d for f, d in logged_details}
 
-    profile = build_profile(rated_details)
+    profile = build_profile(logged_details)
     if not profile.genre_weight:
         raise ValueError(
-            "Couldn't build a taste profile -- no rated films with usable TMDB data were found."
+            "Couldn't build a taste profile -- no logged films with usable TMDB data were found."
         )
 
     favorite_pool = sorted(
-        [f for f in rated if f.rating >= FAVORITE_THRESHOLD],
-        key=lambda f: (f.rating, f.liked),
+        [f for f in with_ids if film_weight(f) >= FAVORITE_WEIGHT_THRESHOLD],
+        key=film_weight,
         reverse=True,
     )
     if not favorite_pool:
-        # Fall back to the highest-rated films even if none clear the bar.
-        favorite_pool = sorted(rated, key=lambda f: f.rating or 0, reverse=True)
+        # Fall back to the highest-weighted films even if none clear the bar.
+        favorite_pool = sorted(with_ids, key=film_weight, reverse=True)
     seeds = _select_diverse_seeds(favorite_pool, details_by_id, MAX_SEEDS, MAX_SEEDS_PER_GENRE)
 
     seed_titles = {f.tmdb_id: f"you liked {f.title} ({f.year})" for f in seeds}
@@ -224,7 +247,7 @@ def recommend(
     candidate_because: dict[int, set[str]] = defaultdict(set)
 
     for seed in seeds:
-        seed_weight = (seed.rating - 2.5) + (0.5 if seed.liked else 0)
+        seed_weight = film_weight(seed)
         for kind in ("recommendations", "similar"):
             related = client.related(seed.tmdb_id, kind)[:CANDIDATES_PER_SEED]
             for rank, item in enumerate(related):
@@ -253,6 +276,9 @@ def recommend(
         details = client.movie_details(cid)
         if not details:
             continue
+        if preferred_set and not preferred_set.intersection(details["genres"]):
+            continue  # a genre focus is a hard filter, not just a nudge
+
         content_score, matched_genres = _content_score(details, profile)
         quality_floor = (details["vote_average"] - 5.5) * 0.15
         preferred_hits = len(preferred_set.intersection(details["genres"]))

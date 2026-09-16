@@ -21,7 +21,9 @@ from .tmdb import TMDBClient
 
 FAVORITE_THRESHOLD = 4.0
 LOW_RATING_THRESHOLD = 2.0
-MAX_SEEDS = 12
+MAX_SEEDS = 20
+MAX_SEEDS_PER_GENRE = 6
+MAX_RESULTS_PER_GENRE = 5
 CANDIDATES_PER_SEED = 12
 
 
@@ -46,10 +48,22 @@ class Recommendation:
     score: float
     because_of: list[str]
     matched_genres: list[str]
+    genre_ids: list[int]
 
 
 def build_profile(rated_details: list[tuple[LoggedFilm, dict]]) -> Profile:
+    """Averages each trait's weight across the films that carry it, rather
+    than summing. A genre you've merely watched a lot of (in volume) would
+    otherwise outscore a genre you've rated consistently higher but seen in
+    fewer films -- summing rewards volume, averaging rewards actual taste."""
     profile = Profile()
+    genre_sum: dict[int, float] = defaultdict(float)
+    genre_count: dict[int, int] = defaultdict(int)
+    keyword_sum: dict[int, float] = defaultdict(float)
+    keyword_count: dict[int, int] = defaultdict(int)
+    person_sum: dict[int, float] = defaultdict(float)
+    person_count: dict[int, int] = defaultdict(int)
+
     for logged, details in rated_details:
         if not details or logged.rating is None:
             continue
@@ -58,17 +72,86 @@ def build_profile(rated_details: list[tuple[LoggedFilm, dict]]) -> Profile:
             weight += 0.5
 
         for gid in details["genres"]:
-            profile.genre_weight[gid] += weight
+            genre_sum[gid] += weight
+            genre_count[gid] += 1
             profile.genre_names[gid] = details["genre_names"][gid]
         for kid in details["keywords"]:
-            profile.keyword_weight[kid] += weight * 0.6
+            keyword_sum[kid] += weight * 0.6
+            keyword_count[kid] += 1
             profile.keyword_names[kid] = details["keyword_names"][kid]
         people = details["directors"] + details["cast"][:3]
         for p in people:
             person_w = weight * (1.2 if p in details["directors"] else 0.8)
-            profile.person_weight[p["id"]] += person_w
+            person_sum[p["id"]] += person_w
+            person_count[p["id"]] += 1
             profile.person_names[p["id"]] = p["name"]
+
+    profile.genre_weight = {g: genre_sum[g] / genre_count[g] for g in genre_sum}
+    profile.keyword_weight = {k: keyword_sum[k] / keyword_count[k] for k in keyword_sum}
+    profile.person_weight = {p: person_sum[p] / person_count[p] for p in person_sum}
     return profile
+
+
+def _select_diverse_seeds(
+    candidates: list[LoggedFilm],
+    details_by_id: dict[int, dict],
+    max_seeds: int,
+    max_per_genre: int,
+) -> list[LoggedFilm]:
+    """Picks favorite films to seed candidate generation, capping how many
+    seeds can share a genre so a handful of tied-rating titles in one genre
+    (e.g. several 5-star animated films) can't crowd out other favorites
+    (e.g. 4.5-star titles) that never get picked because the cap fills up
+    on rating alone."""
+    seeds: list[LoggedFilm] = []
+    overflow: list[LoggedFilm] = []
+    genre_counts: dict[int, int] = defaultdict(int)
+
+    for f in candidates:
+        genres = details_by_id.get(f.tmdb_id, {}).get("genres", [])
+        if genres and any(genre_counts[g] >= max_per_genre for g in genres):
+            overflow.append(f)
+            continue
+        seeds.append(f)
+        for g in genres:
+            genre_counts[g] += 1
+        if len(seeds) >= max_seeds:
+            return seeds
+
+    for f in overflow:
+        if len(seeds) >= max_seeds:
+            break
+        seeds.append(f)
+    return seeds
+
+
+def _diversify(
+    results: list[Recommendation], top_n: int, max_per_genre: int
+) -> list[Recommendation]:
+    """Caps how many of the final results can share a genre, so a tightly
+    interconnected cluster on TMDB's graph (e.g. animated family films
+    recommending each other) can't fill every slot at the expense of other
+    genres the profile weighs just as highly."""
+    ranked = sorted(results, key=lambda r: r.score, reverse=True)
+    chosen: list[Recommendation] = []
+    overflow: list[Recommendation] = []
+    genre_counts: dict[int, int] = defaultdict(int)
+
+    for r in ranked:
+        if r.genre_ids and any(genre_counts[g] >= max_per_genre for g in r.genre_ids):
+            overflow.append(r)
+            continue
+        chosen.append(r)
+        for g in r.genre_ids:
+            genre_counts[g] += 1
+        if len(chosen) >= top_n:
+            return chosen
+
+    for r in overflow:
+        if len(chosen) >= top_n:
+            break
+        chosen.append(r)
+    return chosen
 
 
 def _content_score(details: dict, profile: Profile) -> tuple[float, list[str]]:
@@ -103,6 +186,7 @@ def recommend(
     rated = [f for f in with_ids if f.rating is not None]
     report(f"Fetching details for {len(rated)} rated films...")
     rated_details = [(f, client.movie_details(f.tmdb_id)) for f in rated]
+    details_by_id = {f.tmdb_id: d for f, d in rated_details}
 
     profile = build_profile(rated_details)
     if not profile.genre_weight:
@@ -110,14 +194,15 @@ def recommend(
             "Couldn't build a taste profile -- no rated films with usable TMDB data were found."
         )
 
-    seeds = sorted(
+    favorite_pool = sorted(
         [f for f in rated if f.rating >= FAVORITE_THRESHOLD],
         key=lambda f: (f.rating, f.liked),
         reverse=True,
-    )[:MAX_SEEDS]
-    if not seeds:
+    )
+    if not favorite_pool:
         # Fall back to the highest-rated films even if none clear the bar.
-        seeds = sorted(rated, key=lambda f: f.rating or 0, reverse=True)[:MAX_SEEDS]
+        favorite_pool = sorted(rated, key=lambda f: f.rating or 0, reverse=True)
+    seeds = _select_diverse_seeds(favorite_pool, details_by_id, MAX_SEEDS, MAX_SEEDS_PER_GENRE)
 
     seed_titles = {f.tmdb_id: f"{f.title} ({f.year})" for f in seeds}
 
@@ -160,8 +245,8 @@ def recommend(
                 score=total_score,
                 because_of=sorted(candidate_because[cid])[:3],
                 matched_genres=matched_genres[:3],
+                genre_ids=details["genres"],
             )
         )
 
-    results.sort(key=lambda r: r.score, reverse=True)
-    return results[:top_n]
+    return _diversify(results, top_n, MAX_RESULTS_PER_GENRE)

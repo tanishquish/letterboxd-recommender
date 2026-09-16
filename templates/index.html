@@ -22,11 +22,15 @@
         <label for="username">Letterboxd username or profile URL</label>
         <input type="text" id="username" name="username" placeholder="e.g. daveisfiasco or https://letterboxd.com/daveisfiasco/" value="{{ username or '' }}" required>
       </div>
+      {% if default_key %}
+        <input type="hidden" name="api_key" value="">
+      {% else %}
       <div class="field">
         <label for="api_key">TMDB API key</label>
-        <input type="text" id="api_key" name="api_key" placeholder="paste your TMDB v3 API key" value="{{ default_key or '' }}" required>
+        <input type="text" id="api_key" name="api_key" placeholder="paste your TMDB v3 API key" required>
         <div class="hint">Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> (create an account, request an API key, "Developer" use). Set env var <code>TMDB_API_KEY</code> to skip pasting it each time.</div>
       </div>
+      {% endif %}
 
       <div class="field">
         <label>Focus on a genre <span class="optional">(optional &mdash; pick up to 3)</span></label>

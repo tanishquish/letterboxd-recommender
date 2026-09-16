@@ -20,6 +20,7 @@ Approach:
    don't dominate just because they matched a keyword. If genres were picked,
    the final list is filtered down to only films in those genres.
 """
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -202,6 +203,37 @@ def _content_score(details: dict, profile: Profile) -> tuple[float, list[str]]:
     return score, [g for g in matched_genres if g]
 
 
+_TITLE_NOISE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _normalize_title(title: str) -> str:
+    return _TITLE_NOISE_RE.sub(" ", title.lower()).strip()
+
+
+class WatchedFilter:
+    """Excludes already-logged films from candidates by TMDB id primarily,
+    but also by normalized title+year as a backup. A film scraped from the
+    diary that TMDB search couldn't resolve to an id (or resolved wrongly)
+    would otherwise have zero exclusion protection and could slip back in
+    as a "recommendation" for something the user has already watched."""
+
+    def __init__(self, logged_films: list[LoggedFilm]):
+        self.ids = {f.tmdb_id for f in logged_films if f.tmdb_id}
+        self.title_year_keys = {
+            (_normalize_title(f.title), f.year) for f in logged_films if f.title
+        }
+
+    def is_watched(self, item: dict) -> bool:
+        if item.get("id") in self.ids:
+            return True
+        title = item.get("title") or item.get("name")
+        if not title:
+            return False
+        year_str = (item.get("release_date") or "")[:4]
+        year = int(year_str) if year_str.isdigit() else None
+        return (_normalize_title(title), year) in self.title_year_keys
+
+
 def recommend(
     client: TMDBClient,
     logged_films: list[LoggedFilm],
@@ -217,7 +249,7 @@ def recommend(
     preferred_set = set(preferred_genre_ids)
 
     with_ids = [f for f in logged_films if f.tmdb_id]
-    watched_ids = {f.tmdb_id for f in with_ids}
+    watched = WatchedFilter(logged_films)
 
     report(f"Fetching details for {len(with_ids)} logged films...")
     client.prefetch_movie_details([f.tmdb_id for f in with_ids])
@@ -254,7 +286,7 @@ def recommend(
             related = client.related(seed.tmdb_id, kind)[:CANDIDATES_PER_SEED]
             for rank, item in enumerate(related):
                 cid = item["id"]
-                if cid in watched_ids:
+                if watched.is_watched(item):
                     continue
                 candidate_sources[cid] = item
                 position_decay = 1.0 / (1 + rank * 0.15)
@@ -268,7 +300,7 @@ def recommend(
             genre_label = f"you picked {GENRE_NAMES.get(gid, 'that genre')}"
             for item in client.discover_by_genre(gid):
                 cid = item["id"]
-                if cid in watched_ids:
+                if watched.is_watched(item):
                     continue
                 candidate_sources.setdefault(cid, item)
                 candidate_because[cid].add(genre_label)
@@ -280,6 +312,8 @@ def recommend(
         details = client.movie_details(cid)
         if not details:
             continue
+        if watched.is_watched({"id": cid, "title": details["title"], "release_date": details["year"]}):
+            continue  # belt-and-suspenders: full details can reveal a title/year match the summary missed
         if preferred_set and not preferred_set.intersection(details["genres"]):
             continue  # a genre focus is a hard filter, not just a nudge
 

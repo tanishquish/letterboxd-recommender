@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recommendations for {{ username }} — Letterboxd Recommender</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <a class="back-link" href="/">&larr; new search</a>
+    <header class="top">
+      <h1>Picks for <span class="accent">{{ username }}</span></h1>
+    </header>
+    <p class="meta-line">
+      Built from <strong>{{ rated_count }}</strong> rated films out of <strong>{{ total_logged }}</strong> recently logged.
+    </p>
+
+    {% if recs %}
+    <div class="rec-grid">
+      {% for r in recs %}
+      <div class="rec-card">
+        <div class="poster" style="{% if r.poster_url %}background-image:url('{{ r.poster_url }}');{% endif %}">
+          {% if not r.poster_url %}{{ r.title }}{% endif %}
+        </div>
+        <div class="body">
+          <div class="title-row">
+            <span class="title">{{ r.title }}</span>
+            <span class="year">{{ r.year }}</span>
+          </div>
+          {% if r.vote_average %}<div class="rating">★ {{ "%.1f"|format(r.vote_average) }} on TMDB</div>{% endif %}
+          {% if r.matched_genres %}<div class="genres">{{ r.matched_genres|join(', ') }}</div>{% endif %}
+          <div class="overview">{{ r.overview }}</div>
+          {% if r.because_of %}
+          <div class="because">Because you liked {{ r.because_of|join(', ') }}</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+      <div class="error-box">No recommendations came back — try a profile with more rated films.</div>
+    {% endif %}
+
+    <footer class="note">Data from Letterboxd's public RSS feed and TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
+  </div>
+</body>
+</html>

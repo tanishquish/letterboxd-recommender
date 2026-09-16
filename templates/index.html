@@ -11,7 +11,7 @@
     <header class="top">
       <h1><span class="accent">Letterboxd</span> Recommender</h1>
     </header>
-    <p class="subtitle">Reads a public Letterboxd profile's recent activity and suggests unwatched films based on what you've rated highly.</p>
+    <p class="subtitle">Scrapes a public Letterboxd profile's full logged history and suggests unwatched films based on what you've rated highly.</p>
 
     {% if error %}
       <div class="error-box">{{ error }}</div>
@@ -74,7 +74,7 @@
     </script>
 
     <footer class="note">
-      Your profile must be public. Only your most recent ~100 logged films are used, since that's what Letterboxd's RSS feed exposes. Nothing is stored — this runs locally.
+      Your profile must be public. Scraping your full diary can take 30-90 seconds for an active account &mdash; that's normal. If scraping isn't available, it falls back to your most recent ~100 logged films from Letterboxd's RSS feed. Nothing is stored — this runs locally.
     </footer>
   </div>
 </body>

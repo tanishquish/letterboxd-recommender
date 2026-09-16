@@ -13,7 +13,8 @@
       <h1>Picks for <span class="accent">{{ username }}</span></h1>
     </header>
     <p class="meta-line">
-      Built from <strong>{{ rated_count }}</strong> rated films out of <strong>{{ total_logged }}</strong> recently logged.
+      Built from <strong>{{ rated_count }}</strong> rated films out of <strong>{{ total_logged }}</strong> logged
+      {% if source == 'scraped' %}(your full diary history){% else %}(from your recent RSS activity — full-history scraping was unavailable this run){% endif %}.
       {% if selected_genre_names %}Focused on <strong>{{ selected_genre_names|join(', ') }}</strong>.{% endif %}
     </p>
 

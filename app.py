@@ -71,12 +71,10 @@ def recommend_route():
     genre_names = dict(GENRES)
     selected_genre_names = [genre_names[g] for g in selected_genre_ids if g in genre_names]
 
-    rated_count = sum(1 for f in films if f.rating is not None)
     return render_template(
         "results.html",
         username=username,
         total_logged=len(films),
-        rated_count=rated_count,
         recs=recs,
         api_key=api_key,
         selected_genre_names=selected_genre_names,

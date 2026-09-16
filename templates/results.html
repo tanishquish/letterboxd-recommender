@@ -14,8 +14,7 @@
     </header>
     <p class="meta-line">
       Built from all <strong>{{ total_logged }}</strong> logged films
-      {% if source == 'scraped' %}(your full diary history){% else %}(from your recent RSS activity — full-history scraping was unavailable this run){% endif %},
-      <strong>{{ rated_count }}</strong> of them with a star rating.
+      {% if source == 'scraped' %}(your full diary history){% else %}(from your recent RSS activity — full-history scraping was unavailable this run){% endif %}.
       {% if selected_genre_names %}Focused on <strong>{{ selected_genre_names|join(', ') }}</strong>.{% endif %}
     </p>
 

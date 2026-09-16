@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from .letterboxd import LoggedFilm
-from .tmdb import TMDBClient
+from .tmdb import GENRES, TMDBClient
 
 FAVORITE_THRESHOLD = 4.0
 LOW_RATING_THRESHOLD = 2.0
@@ -25,6 +25,9 @@ MAX_SEEDS = 20
 MAX_SEEDS_PER_GENRE = 6
 MAX_RESULTS_PER_GENRE = 5
 CANDIDATES_PER_SEED = 12
+MAX_PREFERRED_GENRES = 3
+GENRE_PREFERENCE_BOOST = 10.0
+GENRE_NAMES = dict(GENRES)
 
 
 @dataclass
@@ -126,23 +129,28 @@ def _select_diverse_seeds(
 
 
 def _diversify(
-    results: list[Recommendation], top_n: int, max_per_genre: int
+    results: list[Recommendation],
+    top_n: int,
+    max_per_genre: int,
+    exempt_genres: set[int] = frozenset(),
 ) -> list[Recommendation]:
     """Caps how many of the final results can share a genre, so a tightly
     interconnected cluster on TMDB's graph (e.g. animated family films
     recommending each other) can't fill every slot at the expense of other
-    genres the profile weighs just as highly."""
+    genres the profile weighs just as highly. Genres the user explicitly
+    asked to focus on are exempt from the cap -- that's the point of asking."""
     ranked = sorted(results, key=lambda r: r.score, reverse=True)
     chosen: list[Recommendation] = []
     overflow: list[Recommendation] = []
     genre_counts: dict[int, int] = defaultdict(int)
 
     for r in ranked:
-        if r.genre_ids and any(genre_counts[g] >= max_per_genre for g in r.genre_ids):
+        capped_genres = [g for g in r.genre_ids if g not in exempt_genres]
+        if capped_genres and any(genre_counts[g] >= max_per_genre for g in capped_genres):
             overflow.append(r)
             continue
         chosen.append(r)
-        for g in r.genre_ids:
+        for g in capped_genres:
             genre_counts[g] += 1
         if len(chosen) >= top_n:
             return chosen
@@ -174,11 +182,15 @@ def recommend(
     client: TMDBClient,
     logged_films: list[LoggedFilm],
     top_n: int = 20,
+    preferred_genre_ids: list[int] | None = None,
     progress=None,
 ) -> list[Recommendation]:
     def report(msg: str):
         if progress:
             progress(msg)
+
+    preferred_genre_ids = list(dict.fromkeys(preferred_genre_ids or []))[:MAX_PREFERRED_GENRES]
+    preferred_set = set(preferred_genre_ids)
 
     with_ids = [f for f in logged_films if f.tmdb_id]
     watched_ids = {f.tmdb_id for f in with_ids}
@@ -204,7 +216,7 @@ def recommend(
         favorite_pool = sorted(rated, key=lambda f: f.rating or 0, reverse=True)
     seeds = _select_diverse_seeds(favorite_pool, details_by_id, MAX_SEEDS, MAX_SEEDS_PER_GENRE)
 
-    seed_titles = {f.tmdb_id: f"{f.title} ({f.year})" for f in seeds}
+    seed_titles = {f.tmdb_id: f"you liked {f.title} ({f.year})" for f in seeds}
 
     report(f"Gathering candidates from {len(seeds)} favorite films...")
     candidate_sources: dict[int, dict] = {}
@@ -224,6 +236,17 @@ def recommend(
                 candidate_seed_score[cid] += seed_weight * position_decay
                 candidate_because[cid].add(seed_titles[seed.tmdb_id])
 
+    if preferred_genre_ids:
+        report(f"Pulling extra picks for {len(preferred_genre_ids)} chosen genre(s)...")
+        for gid in preferred_genre_ids:
+            genre_label = f"you picked {GENRE_NAMES.get(gid, 'that genre')}"
+            for item in client.discover_by_genre(gid):
+                cid = item["id"]
+                if cid in watched_ids:
+                    continue
+                candidate_sources.setdefault(cid, item)
+                candidate_because[cid].add(genre_label)
+
     report(f"Scoring {len(candidate_sources)} candidates...")
     results: list[Recommendation] = []
     for cid, basic in candidate_sources.items():
@@ -232,7 +255,9 @@ def recommend(
             continue
         content_score, matched_genres = _content_score(details, profile)
         quality_floor = (details["vote_average"] - 5.5) * 0.15
-        total_score = candidate_seed_score[cid] * 2 + content_score + quality_floor
+        preferred_hits = len(preferred_set.intersection(details["genres"]))
+        genre_pref_boost = preferred_hits * GENRE_PREFERENCE_BOOST
+        total_score = candidate_seed_score[cid] * 2 + content_score + quality_floor + genre_pref_boost
 
         results.append(
             Recommendation(
@@ -249,4 +274,4 @@ def recommend(
             )
         )
 
-    return _diversify(results, top_n, MAX_RESULTS_PER_GENRE)
+    return _diversify(results, top_n, MAX_RESULTS_PER_GENRE, exempt_genres=preferred_set)

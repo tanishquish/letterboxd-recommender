@@ -14,6 +14,7 @@
     </header>
     <p class="meta-line">
       Built from <strong>{{ rated_count }}</strong> rated films out of <strong>{{ total_logged }}</strong> recently logged.
+      {% if selected_genre_names %}Focused on <strong>{{ selected_genre_names|join(', ') }}</strong>.{% endif %}
     </p>
 
     {% if recs %}
@@ -32,7 +33,7 @@
           {% if r.matched_genres %}<div class="genres">{{ r.matched_genres|join(', ') }}</div>{% endif %}
           <div class="overview">{{ r.overview }}</div>
           {% if r.because_of %}
-          <div class="because">Because you liked {{ r.because_of|join(', ') }}</div>
+          <div class="because">Because {{ r.because_of|join('; ') }}</div>
           {% endif %}
         </div>
       </div>

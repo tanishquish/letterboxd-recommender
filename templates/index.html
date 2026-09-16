@@ -27,8 +27,51 @@
         <input type="text" id="api_key" name="api_key" placeholder="paste your TMDB v3 API key" value="{{ default_key or '' }}" required>
         <div class="hint">Free at <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener">themoviedb.org/settings/api</a> (create an account, request an API key, "Developer" use). Set env var <code>TMDB_API_KEY</code> to skip pasting it each time.</div>
       </div>
+
+      <div class="field">
+        <label>Focus on a genre <span class="optional">(optional &mdash; pick up to 3)</span></label>
+        <div class="genre-grid" id="genre-grid">
+          {% for gid, gname in genres %}
+          <button type="button" class="genre-btn{% if selected_genre_ids and gid in selected_genre_ids %} selected{% endif %}" data-genre-id="{{ gid }}">{{ gname }}</button>
+          {% endfor %}
+        </div>
+        <div class="hint">Selected genres get pulled in even if they're not already a big part of your logged films.</div>
+        <input type="hidden" id="genre_ids" name="genre_ids" value="{{ (selected_genre_ids or [])|join(',') }}">
+      </div>
+
       <button type="submit" class="submit">Get recommendations</button>
     </form>
+
+    <script>
+      (function () {
+        const MAX_GENRES = 3;
+        const grid = document.getElementById("genre-grid");
+        const hidden = document.getElementById("genre_ids");
+        const buttons = Array.from(grid.querySelectorAll(".genre-btn"));
+
+        function selected() {
+          return buttons.filter((b) => b.classList.contains("selected"));
+        }
+
+        function sync() {
+          hidden.value = selected().map((b) => b.dataset.genreId).join(",");
+        }
+
+        buttons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            if (btn.classList.contains("selected")) {
+              btn.classList.remove("selected");
+            } else {
+              if (selected().length >= MAX_GENRES) return;
+              btn.classList.add("selected");
+            }
+            sync();
+          });
+        });
+
+        sync();
+      })();
+    </script>
 
     <footer class="note">
       Your profile must be public. Only your most recent ~100 logged films are used, since that's what Letterboxd's RSS feed exposes. Nothing is stored — this runs locally.

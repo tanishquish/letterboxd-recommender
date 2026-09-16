@@ -9,6 +9,30 @@ import requests
 BASE_URL = "https://api.themoviedb.org/3"
 POSTER_BASE = "https://image.tmdb.org/t/p/w342"
 
+# TMDB's standard movie genre list -- the same set Letterboxd shows on its
+# own /films/genre/ pages, since Letterboxd sources genre metadata from
+# TMDB. Fixed and stable enough to hardcode rather than fetch on every load.
+GENRES = [
+    (28, "Action"),
+    (12, "Adventure"),
+    (16, "Animation"),
+    (35, "Comedy"),
+    (80, "Crime"),
+    (99, "Documentary"),
+    (18, "Drama"),
+    (10751, "Family"),
+    (14, "Fantasy"),
+    (36, "History"),
+    (27, "Horror"),
+    (10402, "Music"),
+    (9648, "Mystery"),
+    (10749, "Romance"),
+    (878, "Science Fiction"),
+    (53, "Thriller"),
+    (10752, "War"),
+    (37, "Western"),
+]
+
 
 class TMDBError(Exception):
     pass
@@ -97,6 +121,30 @@ class TMDBClient:
             return self._rec_cache[cache_key]
         data = self._get(f"/movie/{movie_id}/{kind}")
         results = data.get("results", []) if data else []
+        self._rec_cache[cache_key] = results
+        return results
+
+    def discover_by_genre(self, genre_id: int, pages: int = 2) -> list[dict]:
+        """Well-regarded movies in a genre, independent of any seed film.
+
+        Used for genres a user picks explicitly but may barely appear in
+        their own ratings, where recommendations/similar off their favorite
+        films would never surface anything.
+        """
+        cache_key = ("discover", genre_id)
+        if cache_key in self._rec_cache:
+            return self._rec_cache[cache_key]
+
+        results = []
+        for page in range(1, pages + 1):
+            data = self._get(
+                "/discover/movie",
+                with_genres=genre_id,
+                sort_by="popularity.desc",
+                **{"vote_count.gte": 200},
+                page=page,
+            )
+            results.extend(data.get("results", []) if data else [])
         self._rec_cache[cache_key] = results
         return results
 

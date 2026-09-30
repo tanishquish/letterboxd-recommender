@@ -95,6 +95,24 @@
     <footer class="note">Data from Letterboxd's public RSS feed and TMDB. Streaming availability from TMDB/JustWatch (US only), based on the first two platforms found for each film; more may be available. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
   </div>
 
+  <div class="modal-overlay" id="movie-modal" hidden>
+    <div class="modal-card">
+      <button type="button" class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+      <div class="modal-poster" id="modal-poster"></div>
+      <div class="modal-body">
+        <div class="modal-title-row">
+          <h2 id="modal-title"></h2>
+          <span id="modal-year" class="year"></span>
+        </div>
+        <div id="modal-rating" class="rating"></div>
+        <div id="modal-genres" class="genres"></div>
+        <div id="modal-platforms" class="platforms"></div>
+        <p id="modal-overview" class="modal-overview"></p>
+        <div id="modal-because" class="because"></div>
+      </div>
+    </div>
+  </div>
+
   <script>
     (function () {
       const toggle = document.getElementById("filter-toggle");
@@ -156,6 +174,67 @@
           applyFilter();
         });
       }
+    })();
+  </script>
+
+  <script>
+    (function () {
+      const modal = document.getElementById("movie-modal");
+      if (!modal) return;
+      const closeBtn = document.getElementById("modal-close");
+      const modalPoster = document.getElementById("modal-poster");
+      const modalTitle = document.getElementById("modal-title");
+      const modalYear = document.getElementById("modal-year");
+      const modalRating = document.getElementById("modal-rating");
+      const modalGenres = document.getElementById("modal-genres");
+      const modalPlatforms = document.getElementById("modal-platforms");
+      const modalOverview = document.getElementById("modal-overview");
+      const modalBecause = document.getElementById("modal-because");
+
+      function fill(el, source, hideIfEmpty) {
+        const text = source ? source.textContent : "";
+        el.textContent = text;
+        if (hideIfEmpty) el.hidden = !text;
+        return text;
+      }
+
+      function openModal(card) {
+        const poster = card.querySelector(".poster");
+        modalPoster.style.backgroundImage = poster ? poster.style.backgroundImage : "";
+        modalPoster.textContent = poster && !poster.style.backgroundImage ? poster.textContent.trim() : "";
+
+        modalTitle.textContent = fill(modalTitle, card.querySelector(".title"), false);
+        modalYear.textContent = fill(modalYear, card.querySelector(".year"), false);
+        fill(modalRating, card.querySelector(".rating"), true);
+        fill(modalGenres, card.querySelector(".genres"), true);
+
+        const platforms = card.querySelector(".platforms");
+        fill(modalPlatforms, platforms, false);
+        modalPlatforms.className = "platforms" + (platforms && platforms.classList.contains("unavailable") ? " unavailable" : "");
+
+        fill(modalOverview, card.querySelector(".overview"), false);
+        fill(modalBecause, card.querySelector(".because"), true);
+
+        modal.hidden = false;
+        document.body.style.overflow = "hidden";
+      }
+
+      function closeModal() {
+        modal.hidden = true;
+        document.body.style.overflow = "";
+      }
+
+      document.querySelectorAll(".rec-card").forEach((card) => {
+        card.addEventListener("click", () => openModal(card));
+      });
+
+      closeBtn.addEventListener("click", closeModal);
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeModal();
+      });
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !modal.hidden) closeModal();
+      });
     })();
   </script>
 </body>

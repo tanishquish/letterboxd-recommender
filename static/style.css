@@ -252,7 +252,7 @@ button.submit:hover { background: #00c94a; }
 
 .rec-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, 170px);
   gap: 20px;
 }
 
@@ -269,10 +269,6 @@ button.submit:hover { background: #00c94a; }
 
 .split-col:first-child {
   flex: 2 1 0;
-}
-
-.split-col .rec-grid {
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
 }
 
 .split-divider {
@@ -314,6 +310,13 @@ button.submit:hover { background: #00c94a; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  cursor: pointer;
+  transition: border-color 0.1s, transform 0.1s;
+}
+
+.rec-card:hover {
+  border-color: var(--green);
+  transform: translateY(-2px);
 }
 
 .rec-card .poster {
@@ -408,4 +411,101 @@ footer.note {
   margin-top: 40px;
   color: var(--text-dim);
   font-size: 12px;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  max-width: 640px;
+  width: 100%;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: flex;
+}
+
+.modal-poster {
+  width: 220px;
+  flex-shrink: 0;
+  aspect-ratio: 2 / 3;
+  background: #0e1216 center/cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+  padding: 10px;
+  border-radius: 12px 0 0 12px;
+}
+
+.modal-body {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding-right: 24px;
+}
+
+.modal-title-row h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.modal-overview {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.6;
+  margin: 0;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.5);
+  border: none;
+  color: #fff;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.modal-close:hover {
+  background: rgba(0, 0, 0, 0.75);
+}
+
+@media (max-width: 560px) {
+  .modal-card {
+    flex-direction: column;
+    max-height: 90vh;
+  }
+  .modal-poster {
+    width: 100%;
+    border-radius: 12px 12px 0 0;
+  }
 }

@@ -18,9 +18,7 @@
       {% if selected_genre_names %}Focused on <strong>{{ selected_genre_names|join(', ') }}</strong>.{% endif %}
     </p>
 
-    {% if recs %}
-    <div class="rec-grid">
-      {% for r in recs %}
+    {% macro rec_card(r) %}
       <div class="rec-card">
         <div class="poster" style="{% if r.poster_url %}background-image:url('{{ r.poster_url }}');{% endif %}">
           {% if not r.poster_url %}{{ r.title }}{% endif %}
@@ -38,10 +36,32 @@
           {% endif %}
         </div>
       </div>
-      {% endfor %}
-    </div>
+    {% endmacro %}
+
+    {% if not general_recs and not watchlist_recs %}
+      <div class="error-box">No recommendations came back — try a profile with more logged films.</div>
+    {% elif watchlist_recs %}
+      <div class="split-layout">
+        <div class="split-col">
+          <h2 class="split-heading">General Recommendations</h2>
+          <p class="split-subheading">Fresh picks based on your taste profile.</p>
+          <div class="rec-grid">
+            {% for r in general_recs %}{{ rec_card(r) }}{% endfor %}
+          </div>
+        </div>
+        <div class="split-divider"></div>
+        <div class="split-col">
+          <h2 class="split-heading">From Your Watchlist</h2>
+          <p class="split-subheading">Already on your list &mdash; good sign your taste profile checks out.</p>
+          <div class="rec-grid">
+            {% for r in watchlist_recs %}{{ rec_card(r) }}{% endfor %}
+          </div>
+        </div>
+      </div>
     {% else %}
-      <div class="error-box">No recommendations came back — try a profile with more rated films.</div>
+      <div class="rec-grid">
+        {% for r in general_recs %}{{ rec_card(r) }}{% endfor %}
+      </div>
     {% endif %}
 
     <footer class="note">Data from Letterboxd's public RSS feed and TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>

@@ -29,6 +29,16 @@ class LetterboxdError(Exception):
     pass
 
 
+_TITLE_NOISE_RE = re.compile(r"[^a-z0-9]+")
+
+
+def normalize_title(title: str) -> str:
+    """Lowercases and strips punctuation/whitespace noise so titles can be
+    compared across sources (Letterboxd scrape vs. TMDB) that format them
+    slightly differently."""
+    return _TITLE_NOISE_RE.sub(" ", title.lower()).strip()
+
+
 @dataclass
 class LoggedFilm:
     title: str

@@ -20,11 +20,10 @@ Approach:
    don't dominate just because they matched a keyword. If genres were picked,
    the final list is filtered down to only films in those genres.
 """
-import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from .letterboxd import LoggedFilm
+from .letterboxd import LoggedFilm, normalize_title
 from .tmdb import GENRES, TMDBClient
 
 FAVORITE_WEIGHT_THRESHOLD = 1.5  # roughly equivalent to a plain 4-star rating
@@ -64,6 +63,7 @@ class Recommendation:
     because_of: list[str]
     matched_genres: list[str]
     genre_ids: list[int]
+    on_watchlist: bool = False
 
 
 def film_weight(logged: LoggedFilm) -> float:
@@ -203,13 +203,6 @@ def _content_score(details: dict, profile: Profile) -> tuple[float, list[str]]:
     return score, [g for g in matched_genres if g]
 
 
-_TITLE_NOISE_RE = re.compile(r"[^a-z0-9]+")
-
-
-def _normalize_title(title: str) -> str:
-    return _TITLE_NOISE_RE.sub(" ", title.lower()).strip()
-
-
 class WatchedFilter:
     """Excludes already-logged films from candidates by TMDB id primarily,
     but also by normalized title+year as a backup. A film scraped from the
@@ -220,7 +213,7 @@ class WatchedFilter:
     def __init__(self, logged_films: list[LoggedFilm]):
         self.ids = {f.tmdb_id for f in logged_films if f.tmdb_id}
         self.title_year_keys = {
-            (_normalize_title(f.title), f.year) for f in logged_films if f.title
+            (normalize_title(f.title), f.year) for f in logged_films if f.title
         }
 
     def is_watched(self, item: dict) -> bool:
@@ -231,7 +224,7 @@ class WatchedFilter:
             return False
         year_str = (item.get("release_date") or "")[:4]
         year = int(year_str) if year_str.isdigit() else None
-        return (_normalize_title(title), year) in self.title_year_keys
+        return (normalize_title(title), year) in self.title_year_keys
 
 
 def recommend(
@@ -239,6 +232,7 @@ def recommend(
     logged_films: list[LoggedFilm],
     top_n: int = 20,
     preferred_genre_ids: list[int] | None = None,
+    watchlist_keys: set[tuple[str, int | None]] | None = None,
     progress=None,
 ) -> list[Recommendation]:
     def report(msg: str):
@@ -247,6 +241,7 @@ def recommend(
 
     preferred_genre_ids = list(dict.fromkeys(preferred_genre_ids or []))[:MAX_PREFERRED_GENRES]
     preferred_set = set(preferred_genre_ids)
+    watchlist_keys = watchlist_keys or set()
 
     with_ids = [f for f in logged_films if f.tmdb_id]
     watched = WatchedFilter(logged_films)
@@ -323,11 +318,16 @@ def recommend(
         genre_pref_boost = preferred_hits * GENRE_PREFERENCE_BOOST
         total_score = candidate_seed_score[cid] * 2 + content_score + quality_floor + genre_pref_boost
 
+        title = details["title"] or basic.get("title", "Unknown")
+        year_str = details["year"] or ""
+        year_int = int(year_str) if year_str.isdigit() else None
+        on_watchlist = (normalize_title(title), year_int) in watchlist_keys
+
         results.append(
             Recommendation(
                 tmdb_id=cid,
-                title=details["title"] or basic.get("title", "Unknown"),
-                year=details["year"] or "",
+                title=title,
+                year=year_str,
                 overview=details["overview"],
                 poster_url=client.poster_url(details["poster_path"]),
                 vote_average=details["vote_average"],
@@ -335,6 +335,7 @@ def recommend(
                 because_of=sorted(candidate_because[cid])[:3],
                 matched_genres=matched_genres[:3],
                 genre_ids=details["genres"],
+                on_watchlist=on_watchlist,
             )
         )
 

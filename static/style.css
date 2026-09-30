@@ -157,6 +157,53 @@ button.submit:hover { background: #00c94a; }
   gap: 20px;
 }
 
+.split-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+
+.split-col {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.split-col .rec-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+.split-divider {
+  align-self: stretch;
+  width: 1px;
+  flex-shrink: 0;
+  background: var(--border);
+}
+
+.split-heading {
+  font-size: 16px;
+  margin: 0 0 4px;
+  color: var(--text);
+}
+
+.split-subheading {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 16px;
+}
+
+@media (max-width: 700px) {
+  .split-layout {
+    flex-direction: column;
+  }
+  .split-divider {
+    display: none;
+  }
+  .split-col + .split-col {
+    border-top: 1px solid var(--border);
+    padding-top: 20px;
+  }
+}
+
 .rec-card {
   background: var(--bg-card);
   border: 1px solid var(--border);

@@ -267,6 +267,10 @@ button.submit:hover { background: #00c94a; }
   min-width: 0;
 }
 
+.split-col:first-child {
+  flex: 2 1 0;
+}
+
 .split-col .rec-grid {
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
 }

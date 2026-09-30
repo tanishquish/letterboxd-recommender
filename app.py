@@ -1,4 +1,5 @@
 import os
+from collections import Counter
 
 from dotenv import load_dotenv
 from flask import Flask, render_template, request
@@ -76,12 +77,19 @@ def recommend_route():
     watchlist_recs = [r for r in recs if r.on_watchlist]
     general_recs = [r for r in recs if not r.on_watchlist]
 
+    # Only offer services that actually appear among this batch of picks --
+    # a global list of every provider TMDB knows about would mostly filter
+    # to nothing.
+    platform_counts = Counter(p for r in recs for p in r.platforms)
+    available_platforms = sorted(platform_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+
     return render_template(
         "results.html",
         username=username,
         total_logged=len(films),
         general_recs=general_recs,
         watchlist_recs=watchlist_recs,
+        available_platforms=available_platforms,
         api_key=api_key,
         selected_genre_names=selected_genre_names,
         source=source,

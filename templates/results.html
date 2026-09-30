@@ -20,7 +20,7 @@
 
     {% macro rec_card(r) %}
       {% set avail_key = r.platforms|join('|')|lower %}
-      <div class="rec-card" data-has-platforms="{{ 1 if r.platforms else 0 }}" data-availability-key="{{ avail_key }}">
+      <div class="rec-card" data-availability-key="{{ avail_key }}">
         <div class="poster" style="{% if r.poster_url %}background-image:url('{{ r.poster_url }}');{% endif %}">
           {% if not r.poster_url %}{{ r.title }}{% endif %}
         </div>
@@ -47,11 +47,22 @@
     {% if not general_recs and not watchlist_recs %}
       <div class="error-box">No recommendations came back — try a profile with more logged films.</div>
     {% else %}
-      <div class="sort-bar">
-        <span class="sort-label">Sort by:</span>
-        <button type="button" class="sort-btn active" data-sort="recommended">Recommended</button>
-        <button type="button" class="sort-btn" data-sort="availability">Where to watch</button>
+      {% if available_platforms %}
+      <div class="filter-bar">
+        <button type="button" class="filter-toggle" id="filter-toggle">
+          Filter by streaming service <span class="chev">&#9662;</span>
+        </button>
+        <div class="filter-panel" id="filter-panel" hidden>
+          {% for name, count in available_platforms %}
+          <label class="filter-option">
+            <input type="checkbox" class="platform-checkbox" value="{{ name|lower }}">
+            {{ name }} <span class="filter-count">{{ count }}</span>
+          </label>
+          {% endfor %}
+          <button type="button" class="filter-clear" id="filter-clear">Clear</button>
+        </div>
       </div>
+      {% endif %}
 
       {% if watchlist_recs %}
       <div class="split-layout">
@@ -61,6 +72,7 @@
           <div class="rec-grid">
             {% for r in general_recs %}{{ rec_card(r) }}{% endfor %}
           </div>
+          <p class="no-matches" hidden>None of these are on the streaming services you selected.</p>
         </div>
         <div class="split-divider"></div>
         <div class="split-col">
@@ -69,46 +81,81 @@
           <div class="rec-grid">
             {% for r in watchlist_recs %}{{ rec_card(r) }}{% endfor %}
           </div>
+          <p class="no-matches" hidden>None of these are on the streaming services you selected.</p>
         </div>
       </div>
       {% else %}
       <div class="rec-grid">
         {% for r in general_recs %}{{ rec_card(r) }}{% endfor %}
       </div>
+      <p class="no-matches" hidden>None of these are on the streaming services you selected.</p>
       {% endif %}
     {% endif %}
 
-    <footer class="note">Data from Letterboxd's public RSS feed and TMDB. Streaming availability from TMDB/JustWatch (US only) and reflects the first two platforms found for sorting purposes; more may be available. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
+    <footer class="note">Data from Letterboxd's public RSS feed and TMDB. Streaming availability from TMDB/JustWatch (US only), based on the first two platforms found for each film; more may be available. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
   </div>
 
   <script>
     (function () {
-      const buttons = document.querySelectorAll(".sort-btn");
-      const grids = document.querySelectorAll(".rec-grid");
-      const originalOrder = new Map();
-      grids.forEach((grid) => originalOrder.set(grid, Array.from(grid.children)));
+      const toggle = document.getElementById("filter-toggle");
+      const panel = document.getElementById("filter-panel");
+      const clearBtn = document.getElementById("filter-clear");
+      if (!toggle || !panel) return;
 
-      function byAvailability(a, b) {
-        const aHas = a.dataset.hasPlatforms === "1";
-        const bHas = b.dataset.hasPlatforms === "1";
-        if (aHas !== bHas) return aHas ? -1 : 1;
-        return (a.dataset.availabilityKey || "").localeCompare(b.dataset.availabilityKey || "");
+      const checkboxes = Array.from(panel.querySelectorAll(".platform-checkbox"));
+      const cardGroups = Array.from(document.querySelectorAll(".rec-grid")).map((grid) => ({
+        grid,
+        cards: Array.from(grid.children),
+        noMatches: grid.nextElementSibling && grid.nextElementSibling.classList.contains("no-matches")
+          ? grid.nextElementSibling
+          : null,
+      }));
+
+      function applyFilter() {
+        const selected = checkboxes.filter((cb) => cb.checked).map((cb) => cb.value);
+        toggle.classList.toggle("active", selected.length > 0);
+        toggle.textContent = "";
+        const label = document.createElement("span");
+        label.textContent = selected.length
+          ? `Filter by streaming service (${selected.length}) `
+          : "Filter by streaming service ";
+        const chev = document.createElement("span");
+        chev.className = "chev";
+        chev.innerHTML = "&#9662;";
+        toggle.appendChild(label);
+        toggle.appendChild(chev);
+
+        cardGroups.forEach(({ cards, noMatches }) => {
+          let visibleCount = 0;
+          cards.forEach((card) => {
+            const platforms = (card.dataset.availabilityKey || "").split("|").filter(Boolean);
+            const matches = selected.length === 0 || platforms.some((p) => selected.includes(p));
+            card.hidden = !matches;
+            if (matches) visibleCount++;
+          });
+          if (noMatches) noMatches.hidden = cards.length === 0 || visibleCount > 0;
+        });
       }
 
-      buttons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          buttons.forEach((b) => b.classList.remove("active"));
-          btn.classList.add("active");
-          const mode = btn.dataset.sort;
-          grids.forEach((grid) => {
-            const cards =
-              mode === "availability"
-                ? Array.from(grid.children).sort(byAvailability)
-                : originalOrder.get(grid);
-            cards.forEach((card) => grid.appendChild(card));
-          });
-        });
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        panel.hidden = !panel.hidden;
       });
+
+      document.addEventListener("click", (e) => {
+        if (!panel.hidden && !panel.contains(e.target) && e.target !== toggle) {
+          panel.hidden = true;
+        }
+      });
+
+      checkboxes.forEach((cb) => cb.addEventListener("change", applyFilter));
+
+      if (clearBtn) {
+        clearBtn.addEventListener("click", () => {
+          checkboxes.forEach((cb) => (cb.checked = false));
+          applyFilter();
+        });
+      }
     })();
   </script>
 </body>

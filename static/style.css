@@ -151,38 +151,103 @@ button.submit:hover { background: #00c94a; }
 
 .meta-line strong { color: var(--text); }
 
-.sort-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.filter-bar {
+  position: relative;
   margin-bottom: 20px;
 }
 
-.sort-label {
-  font-size: 12px;
-  color: var(--text-dim);
-}
-
-.sort-btn {
+.filter-toggle {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-dim);
   border-radius: 20px;
-  padding: 5px 12px;
+  padding: 7px 14px;
   font-size: 12px;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
-.sort-btn:hover {
+.filter-toggle:hover {
   border-color: var(--text-dim);
   color: var(--text);
 }
 
-.sort-btn.active {
-  background: var(--green);
+.filter-toggle.active {
   border-color: var(--green);
-  color: #0a1a10;
-  font-weight: 600;
+  color: var(--green);
+}
+
+.filter-toggle .chev {
+  font-size: 10px;
+}
+
+.filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 220px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.filter-option:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+
+.filter-option input {
+  accent-color: var(--green);
+}
+
+.filter-count {
+  margin-left: auto;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.filter-clear {
+  width: 100%;
+  margin-top: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.filter-clear:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.no-matches {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-style: italic;
+}
+
+[hidden] {
+  display: none !important;
 }
 
 .rec-grid {

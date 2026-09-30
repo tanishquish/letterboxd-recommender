@@ -18,8 +18,9 @@
 - [ ] Cache a scraped diary snapshot per username (e.g. on disk with a short TTL) so
       re-running for the same profile doesn't always re-scrape all 8+ diary pages and
       re-resolve every TMDB id from scratch.
-- [ ] Tag recommendations that are already on the user's Letterboxd watchlist, instead of
-      surfacing them as if brand new (would need to scrape `/username/watchlist/` too).
+- [x] ~~Tag recommendations that are already on the user's Letterboxd watchlist~~ -- done:
+      `scrape_profile()` now scrapes the watchlist alongside the diary, and matches surface
+      in a separate "From Your Watchlist" column on the results page.
 - [ ] Let the 30-diary-page scrape cap be configurable instead of a hardcoded constant in
       `letterboxd_scraper.py`, for accounts with a truly enormous logged history.
 - [ ] Consider whether cast weighting should favor top-billed actors more heavily than it

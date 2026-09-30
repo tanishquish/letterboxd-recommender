@@ -64,6 +64,7 @@ class Recommendation:
     matched_genres: list[str]
     genre_ids: list[int]
     on_watchlist: bool = False
+    platforms: list[str] = field(default_factory=list)  # first 2 "where to watch" providers, if any
 
 
 def film_weight(logged: LoggedFilm) -> float:
@@ -339,4 +340,11 @@ def recommend(
             )
         )
 
-    return _diversify(results, top_n, MAX_RESULTS_PER_GENRE, exempt_genres=preferred_set)
+    final = _diversify(results, top_n, MAX_RESULTS_PER_GENRE, exempt_genres=preferred_set)
+
+    report(f"Checking where to watch for {len(final)} picks...")
+    client.prefetch_watch_providers([r.tmdb_id for r in final])
+    for r in final:
+        r.platforms = client.watch_providers(r.tmdb_id)[:2]
+
+    return final

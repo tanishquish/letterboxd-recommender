@@ -151,6 +151,40 @@ button.submit:hover { background: #00c94a; }
 
 .meta-line strong { color: var(--text); }
 
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.sort-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.sort-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sort-btn:hover {
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.sort-btn.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #0a1a10;
+  font-weight: 600;
+}
+
 .rec-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -261,6 +295,18 @@ button.submit:hover { background: #00c94a; }
 .rec-card .genres {
   font-size: 11px;
   color: var(--text-dim);
+}
+
+.rec-card .platforms {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--green);
+}
+
+.rec-card .platforms.unavailable {
+  color: var(--text-dim);
+  font-weight: 400;
+  font-style: italic;
 }
 
 .rec-card .because {

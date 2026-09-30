@@ -19,7 +19,8 @@
     </p>
 
     {% macro rec_card(r) %}
-      <div class="rec-card">
+      {% set avail_key = r.platforms|join('|')|lower %}
+      <div class="rec-card" data-has-platforms="{{ 1 if r.platforms else 0 }}" data-availability-key="{{ avail_key }}">
         <div class="poster" style="{% if r.poster_url %}background-image:url('{{ r.poster_url }}');{% endif %}">
           {% if not r.poster_url %}{{ r.title }}{% endif %}
         </div>
@@ -30,6 +31,11 @@
           </div>
           {% if r.vote_average %}<div class="rating">★ {{ "%.1f"|format(r.vote_average) }} on TMDB</div>{% endif %}
           {% if r.matched_genres %}<div class="genres">{{ r.matched_genres|join(', ') }}</div>{% endif %}
+          {% if r.platforms %}
+          <div class="platforms">Available on: {{ r.platforms|join(', ') }}</div>
+          {% else %}
+          <div class="platforms unavailable">Not available for streaming.</div>
+          {% endif %}
           <div class="overview">{{ r.overview }}</div>
           {% if r.because_of %}
           <div class="because">Because {{ r.because_of|join('; ') }}</div>
@@ -40,7 +46,14 @@
 
     {% if not general_recs and not watchlist_recs %}
       <div class="error-box">No recommendations came back — try a profile with more logged films.</div>
-    {% elif watchlist_recs %}
+    {% else %}
+      <div class="sort-bar">
+        <span class="sort-label">Sort by:</span>
+        <button type="button" class="sort-btn active" data-sort="recommended">Recommended</button>
+        <button type="button" class="sort-btn" data-sort="availability">Where to watch</button>
+      </div>
+
+      {% if watchlist_recs %}
       <div class="split-layout">
         <div class="split-col">
           <h2 class="split-heading">General Recommendations</h2>
@@ -58,13 +71,45 @@
           </div>
         </div>
       </div>
-    {% else %}
+      {% else %}
       <div class="rec-grid">
         {% for r in general_recs %}{{ rec_card(r) }}{% endfor %}
       </div>
+      {% endif %}
     {% endif %}
 
-    <footer class="note">Data from Letterboxd's public RSS feed and TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
+    <footer class="note">Data from Letterboxd's public RSS feed and TMDB. Streaming availability from TMDB/JustWatch (US only) and reflects the first two platforms found for sorting purposes; more may be available. This product uses the TMDB API but is not endorsed or certified by TMDB.</footer>
   </div>
+
+  <script>
+    (function () {
+      const buttons = document.querySelectorAll(".sort-btn");
+      const grids = document.querySelectorAll(".rec-grid");
+      const originalOrder = new Map();
+      grids.forEach((grid) => originalOrder.set(grid, Array.from(grid.children)));
+
+      function byAvailability(a, b) {
+        const aHas = a.dataset.hasPlatforms === "1";
+        const bHas = b.dataset.hasPlatforms === "1";
+        if (aHas !== bHas) return aHas ? -1 : 1;
+        return (a.dataset.availabilityKey || "").localeCompare(b.dataset.availabilityKey || "");
+      }
+
+      buttons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          buttons.forEach((b) => b.classList.remove("active"));
+          btn.classList.add("active");
+          const mode = btn.dataset.sort;
+          grids.forEach((grid) => {
+            const cards =
+              mode === "availability"
+                ? Array.from(grid.children).sort(byAvailability)
+                : originalOrder.get(grid);
+            cards.forEach((card) => grid.appendChild(card));
+          });
+        });
+      });
+    })();
+  </script>
 </body>
 </html>

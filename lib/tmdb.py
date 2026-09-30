@@ -51,6 +51,7 @@ class TMDBClient:
         self.session.mount("https://", adapter)
         self._details_cache: dict[int, dict] = {}
         self._rec_cache: dict[tuple[str, int], list[dict]] = {}
+        self._providers_cache: dict[int, list[str]] = {}
 
     def _get(self, path: str, **params) -> dict:
         params["api_key"] = self.api_key
@@ -154,6 +155,40 @@ class TMDBClient:
             results.extend(data.get("results", []) if data else [])
         self._rec_cache[cache_key] = results
         return results
+
+    def watch_providers(self, movie_id: int, region: str = "US") -> list[str]:
+        """A combined, deduplicated list of streaming/rental/purchase
+        provider names for a region -- the same JustWatch-sourced data
+        Letterboxd's own "Where to watch" panel shows (verified against a
+        real film page). Subscription services (flatrate/free/ads) are
+        listed ahead of rent/buy, since "already included" matters more
+        than "you'd have to pay for it." Empty if the film isn't available
+        anywhere for that region (covers both "showtimes only, no home
+        release yet" and "no data at all" -- TMDB doesn't distinguish
+        those, and neither does the UI need to)."""
+        if movie_id in self._providers_cache:
+            return self._providers_cache[movie_id]
+
+        data = self._get(f"/movie/{movie_id}/watch/providers")
+        region_data = (data.get("results") or {}).get(region, {}) if data else {}
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for category in ("flatrate", "free", "ads", "rent", "buy"):
+            providers = sorted(region_data.get(category, []), key=lambda p: p.get("display_priority", 999))
+            for p in providers:
+                name = p["provider_name"]
+                if name not in seen:
+                    seen.add(name)
+                    ordered.append(name)
+        self._providers_cache[movie_id] = ordered
+        return ordered
+
+    def prefetch_watch_providers(self, movie_ids: list[int], max_workers: int = MAX_WORKERS) -> None:
+        uncached = [m for m in dict.fromkeys(movie_ids) if m not in self._providers_cache]
+        if not uncached:
+            return
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            list(pool.map(self.watch_providers, uncached))
 
     def search_movie(self, title: str, year: int | None) -> dict | None:
         data = self._get("/search/movie", query=title, year=year)
